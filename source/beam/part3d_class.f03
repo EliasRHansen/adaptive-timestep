@@ -585,29 +585,8 @@ subroutine min_betatron_wavelength_part3d(this,lambda_min)
    real ::p3_min
    integer :: i, txt_file_num
    real, dimension(:), allocatable :: non_zero_p3s
-   ! p_min = minval(abs(this%p), dim=2)
-   p3_min = minval(abs(this%p(3,:)),mask=abs(this%q)>0.0)
-   ! non_zero_p3s=pack(this%p(3,:),abs(this%q)>0.0)
-   ! write( *, * ) "rank: " //  num2str(id_proc())// " p_min(1): " // num2str(p_min(1))//&
-   ! &" p_min(2): "// num2str(p_min(2))// " p_min(3): "// num2str(p_min(3))
+   p3_min = minval(abs(this%p(3,:)),mask=abs(this%q)>0.0) 
    lambda_min=2*pi*sqrt(2*p3_min)
-   write( *, * ) "rank: " //  num2str(id_proc())// " lambda_min: " // num2str(lambda_min)
-
-   ! txt_file_num=id_proc()
-   ! open(unit=txt_file_num,file='momentum3-'//num2str(txt_file_num)//'.txt',action='write',status='replace')
-   ! write(txt_file_num, '(5(F10.4, 1X))') this%p(3,:)
-   ! close(unit=txt_file_num)
-
-   ! txt_file_num=id_proc()
-   ! open(unit=txt_file_num,file='non-zero-momentum3-'//num2str(txt_file_num)//'.txt',action='write',status='replace')
-   ! write(txt_file_num, '(5(F10.4, 1X))') non_zero_p3s
-   ! close(unit=txt_file_num)
-
-   ! txt_file_num=id_proc()+num_procs()
-   ! open(unit=txt_file_num,file='q-'//num2str(txt_file_num)//'.txt',action='write',status='replace')
-   ! write(txt_file_num, '(5(ES16.4, 1X))') this%q(:)
-   ! close(unit=txt_file_num)
-
 end subroutine min_betatron_wavelength_part3d
 
 subroutine push_spin_part3d( this, ep, bp, p_old, gam, ptrcur, np )

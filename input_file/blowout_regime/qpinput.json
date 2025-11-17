@@ -1,7 +1,7 @@
 {
 "simulation" :
 {
-    "nodes" : [1,4],  
+    "nodes" : [2,2],  
     "grid" : [250, 500],
     "box" : {
         "r" : [0.0, 5.0],
@@ -27,7 +27,9 @@
     "if_timing" : true,
     "random_seed" : 10,
     "algorithm" : "standard",
-    "time_step_reduction_multiplier" : 3
+    "adaptive_s_step_standard_multiplier" : 2,
+    "adaptive_s_step_safety_multiplier" : 1.2,
+    "index_interval_between_checks" : 3
 },
 
 "beam" :
@@ -35,6 +37,7 @@
     {
     "adaptive_s_step" : true,
     "min_num_s_steps_per_betatron_wavelength": 100,
+    "adaptive_s_nstep_delay" : 5,
     "geometry" : "cartesian",
     "profile" : ["gaussian", "gaussian", "gaussian"],
     "evolution" : true,
@@ -45,7 +48,7 @@
     "npmax" : 1000000,
     "q" : -1.0,
     "m" : 1.0,
-    "gamma" : 2000,
+    "gamma" : 1000,
     "density" : 4.0,
     "quiet_start" : true,
     "gauss_center" : [0.0, 0.0, 0],
