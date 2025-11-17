@@ -1,7 +1,7 @@
 {
 "simulation" :
 {
-    "nodes" : [1,1],  
+    "nodes" : [1,4],  
     "grid" : [250, 500],
     "box" : {
         "r" : [0.0, 5.0],
@@ -10,9 +10,9 @@
     "max_mode" : 1,
     "interpolation" : "linear",
     "n0" : 1.0e16,
-    "time" : 10.1,
-    "dt" : 10.0,
-    "nbeams" : 1,
+    "time" : 100.1,
+    "dt" : 5.0,
+    "nbeams" : 2,
     "nspecies" : 1,
     "nneutrals" : 0,
     "nlasers" : 0,
@@ -26,12 +26,15 @@
     "verbose" : 0,
     "if_timing" : true,
     "random_seed" : 10,
-    "algorithm" : "standard"
+    "algorithm" : "standard",
+    "time_step_reduction_multiplier" : 3
 },
 
 "beam" :
 [
     {
+    "adaptive_s_step" : true,
+    "min_num_s_steps_per_betatron_wavelength": 100,
     "geometry" : "cartesian",
     "profile" : ["gaussian", "gaussian", "gaussian"],
     "evolution" : true,
@@ -42,14 +45,50 @@
     "npmax" : 1000000,
     "q" : -1.0,
     "m" : 1.0,
-    "gamma" : 20000,
+    "gamma" : 2000,
+    "density" : 4.0,
+    "quiet_start" : true,
+    "gauss_center" : [0.0, 0.0, 0],
+    "gauss_sigma" : [0.25, 0.25, 1.5],
+    "range1" : [-2.25, 2.25],
+    "range2" : [-2.25, 2.25],
+    "range3" : [-5.0, 5.0],
+    "uth" : [5.0, 5.0, 0.0],
+    "den_min" : 1e-10,
+    "diag" :
+    [
+        {
+        "name" : ["charge_cyl_m"],
+        "ndump" : 1
+        },
+        {
+        "name" : ["raw"],
+        "ndump" : 1,
+        "psample" : 10
+        }
+    ]    
+    },
+        {
+    "adaptive_s_step" : true,
+    "min_num_s_steps_per_betatron_wavelength": 100,
+    "geometry" : "cartesian",
+    "profile" : ["gaussian", "gaussian", "gaussian"],
+    "evolution" : true,
+    "push_type" : "reduced",
+    "has_spin" : false,
+    "ppc" : [2, 2, 2],
+    "num_theta" : 16,
+    "npmax" : 1000000,
+    "q" : -1.0,
+    "m" : 1.0,
+    "gamma" : 4000,
     "density" : 4.0,
     "quiet_start" : true,
     "gauss_center" : [0.0, 0.0, -2.5],
-    "gauss_sigma" : [0.25, 0.25, 0.5],
-    "range1" : [-1.25, 1.25],
-    "range2" : [-1.25, 1.25],
-    "range3" : [-5.0, 0.0],
+    "gauss_sigma" : [0.25, 0.25, 1.5],
+    "range1" : [-2.25, 2.25],
+    "range2" : [-2.25, 2.25],
+    "range3" : [-5.0, 5.0],
     "uth" : [5.0, 5.0, 0.0],
     "den_min" : 1e-10,
     "diag" :

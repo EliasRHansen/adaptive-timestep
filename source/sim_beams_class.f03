@@ -26,6 +26,9 @@ type sim_beams
 
   integer :: num_beams
 
+  integer, dimension(:),allocatable :: min_num_s_steps_per_betatron_wavelength
+  logical,dimension(:),allocatable :: adaptive_s_step
+
   contains
 
   procedure :: alloc => alloc_sim_beams
@@ -62,6 +65,9 @@ subroutine alloc_sim_beams( this, input, opts )
     call this%beam(i)%alloc( input, opts, i )
   enddo
 
+  allocate(this%adaptive_s_step(this%num_beams))
+  allocate(this%min_num_s_steps_per_betatron_wavelength(this%num_beams))
+
   call write_dbg( cls_name, sname, cls_level, 'ends' )
 
 end subroutine alloc_sim_beams
@@ -82,6 +88,8 @@ subroutine init_sim_beams( this, input, opts )
   integer :: rst_timestep, ps, sm_ord, ierr, max_mode
   type(hdf5file) :: file_rst
   character(len=:), allocatable :: str
+
+  logical :: test
 
   call write_dbg( cls_name, sname, cls_level, 'starts' )
 
@@ -112,8 +120,23 @@ subroutine init_sim_beams( this, input, opts )
   do i = 1, this%num_beams
 
     sm_ord = 0
-    if(input%found('beams('//num2str(i)//').smooth_order')) then
-      call input%get('beams('//num2str(i)//').smooth_order', sm_ord)
+    if(input%found('beam('//num2str(i)//').smooth_order')) then
+      call input%get('beam('//num2str(i)//').smooth_order', sm_ord)
+    endif
+    this%adaptive_s_step(i)=.false.
+    if(input%found('beam('//num2str(i)//').adaptive_s_step')) then
+      call input%get('beam('//num2str(i)//').adaptive_s_step', this%adaptive_s_step(i))
+      if(input%found('beam('//num2str(i)//').min_num_s_steps_per_betatron_wavelength')) then
+        call input%get('beam('//num2str(i)//').min_num_s_steps_per_betatron_wavelength', &
+        &this%min_num_s_steps_per_betatron_wavelength(i))
+      else
+        this%min_num_s_steps_per_betatron_wavelength(i)=40
+      endif
+    endif
+
+    if(input%found('beam('//num2str(i)//').min_num_s_steps_per_betatron_wavelength')) then
+      call input%get('beam('//num2str(i)//').min_num_s_steps_per_betatron_wavelength', &
+      &this%min_num_s_steps_per_betatron_wavelength(i))
     endif
 
     call this%beam(i)%new( input, opts, max_mode, ps, dt, sm_ord, i )

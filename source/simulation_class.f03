@@ -50,6 +50,7 @@ type simulation
   integer :: iter_max, nstep3d, nstep2d, start2d, start3d, tstep
   integer :: nbeams, nspecies, nneutrals, nlasers
   integer :: ndump, max_mode
+  integer :: time_step_reduction_multiplier
 
   ! pipeline parameters
   integer, dimension(:), allocatable :: tag_field, id_field
@@ -164,6 +165,13 @@ subroutine init_simulation(this, input, opts)
   call input%get( 'simulation.nlasers', this%nlasers )
   call input%get( 'simulation.max_mode', this%max_mode )
 
+  if(input%found('simmulation.time_step_reduction_multiplier')) then
+    call input%get( 'simulation.time_step_reduction_multiplier', &
+    &this%time_step_reduction_multiplier )
+  else
+    this%time_step_reduction_multiplier=2
+  endif
+
   call write_stdout( 'Initializing fields...' )
   call this%fields%new( input, opts )
 
@@ -229,9 +237,20 @@ subroutine run_simulation( this )
 
   class( simulation ), intent(inout) :: this
 
-  integer :: i, j, k, l, ierr
-  real :: rel_res, abs_res
+  integer :: i, j, k, l, ierr, time_step_reduction_factor, i_inner, time_reduction_index,ranki
+  integer :: request_send,request_send2,tag!,time_step_reduction_increase
+  real :: rel_res, abs_res,lambda_min,ratio_of_s_steps
+  real :: global_num_s_steps_per_betatron_wavelength
+  !real, dimension(2) :: global_num_s_steps_per_betatron_wavelength_two,  num_s_steps_per_betatron_wavelength_two
   integer, dimension(MPI_STATUS_SIZE) :: istat
+  real, dimension(:), allocatable :: lambda_beta_record, num_s_steps_per_betatron_wavelength,&
+  &min_num_s_steps_per_betatron_wavelength
+  integer,dimension(:),allocatable :: lambda_beta_tag !delete
+  real,dimension(:),allocatable :: global_num_s_steps_per_betatron_wavelength_b
+  real, dimension(:,:), allocatable :: num_s_steps_per_betatron_wavelength_table
+  integer, dimension(:,:), allocatable :: requests_recv
+  integer :: index_interval_between_checks, comm_world_duplicate, comm_loc_duplicate
+  logical :: received
   character(len=32), save :: sname = 'run_simulation'
 
   class(field_psi), pointer :: psi
@@ -271,6 +290,52 @@ subroutine run_simulation( this )
   chi       => this%lasers%chi
   spe       => this%plasma%spe
   neut      => this%plasma%neut
+  time_step_reduction_factor=1
+  time_reduction_index=0
+  request_send2 = MPI_REQUEST_NULL
+  request_send = MPI_REQUEST_NULL
+  if (any(this%beams%adaptive_s_step)) then
+        call mpi_comm_dup(comm_world(),comm_world_duplicate,ierr)
+        call mpi_comm_dup(comm_loc(),comm_loc_duplicate,ierr)
+        allocate(num_s_steps_per_betatron_wavelength(this%nbeams))
+        allocate(min_num_s_steps_per_betatron_wavelength(this%nbeams))
+        allocate(num_s_steps_per_betatron_wavelength_table(this%nbeams,num_procs()))
+        allocate(requests_recv(this%nbeams,num_procs()))
+        allocate(global_num_s_steps_per_betatron_wavelength_b(this%nbeams))
+        allocate(lambda_beta_tag(this%nbeams))
+        do k=1,this%nbeams
+          call this%beams%beam(k)%part%min_beta(lambda_min)
+          min_num_s_steps_per_betatron_wavelength(k)=real(this%beams%&
+          &min_num_s_steps_per_betatron_wavelength(k))
+          num_s_steps_per_betatron_wavelength(k)=lambda_min/this%dt
+          ! if (k==1) then
+          !   num_s_steps_per_betatron_wavelength_two(1)=lambda_min/this%dt
+          !   num_s_steps_per_betatron_wavelength_two(2)=real(id_proc())
+          ! elseif (num_s_steps_per_betatron_wavelength_two(1)>lambda_min/this%dt) then
+          !   num_s_steps_per_betatron_wavelength_two(1)=lambda_min/this%dt
+          !   num_s_steps_per_betatron_wavelength_two(2)=real(id_proc())
+          ! endif
+        enddo
+        ! write( *, * ) "rank: " //  num2str(id_proc())// &
+        ! &"initial num_s_steps_per_betatron_wavelength: " // &
+        ! &num2str(num_s_steps_per_betatron_wavelength)
+        !time_step_reduction_increase=2 !change
+        index_interval_between_checks = max(2,num_stages()) !change
+        allocate(lambda_beta_record(num_stages()-id_stage()))
+        ! write( *, * ) "rank: " //  num2str(id_proc())// &
+        ! &" lambda_beta_record size: " // num2str(size(lambda_beta_record))
+
+        !   write( *, * ) "initial before num_s_steps_per_be: " //  num2str(num_s_steps_per_betatron_wavelength_two(1))&
+        !   &//' '//  num2str(num_s_steps_per_betatron_wavelength_two(2))// " rank: " //  num2str(id_proc())
+        !   write( *, * ) "initial before global_num_s_steps_p: " //  num2str(global_num_s_steps_per_betatron_wavelength_two(1))&
+        !   &//' '//  num2str(global_num_s_steps_per_betatron_wavelength_two(2))// " rank: " //  num2str(id_proc())
+
+        ! call mpi_allreduce( num_s_steps_per_betatron_wavelength_two,&
+        ! &global_num_s_steps_per_betatron_wavelength_two,1,mpi_2double_precision,mpi_minloc,comm_world(),ierr)
+
+        !   write( *, * ) "after global_num_s_steps_p: " //  num2str(global_num_s_steps_per_betatron_wavelength_two(1))&
+        !   &//' '//  num2str(global_num_s_steps_per_betatron_wavelength_two(2))
+  endif
 
   ! deposit beams and do diagnostics to see the initial distribution if it is
   ! a fresh run
@@ -296,6 +361,18 @@ subroutine run_simulation( this )
     this%tstep = i
     call write_stdout( '3D step = '//num2str(i) )
 
+    i_inner=1
+    inner: do while (i_inner<=time_step_reduction_factor)
+      
+
+    !   if (i<time_reduction_index .and. i_inner>1) then
+    !     write(*,*) 'time reduction delayed at stage '//num2str(id_stage())//' exiting inner loop early'
+    !     exit inner
+    !   else
+    !     call mpi_wait(request_send2,istat,ierr)
+    !   endif
+    write(*,*)'rank: '//num2str(id_proc())//&
+    & ' fractional 3D step = '//num2str(real(i)+real((i_inner-1))/real(time_step_reduction_factor)) 
     call q_beam%as(0.0)
     call q_spe%as(0.0)
 
@@ -308,8 +385,9 @@ subroutine run_simulation( this )
     ! pipeline data transfer for species
     do k = 1, this%nspecies
       this%tag_spe(k) = ntag()
-      call spe(k)%precv( this%tag_spe(k) )
+      call spe(k)%precv( this%tag_spe(k) ) !receives x(1),x(2),p(1),p(2),p(3),gamma,psi,q
     enddo
+
 
     ! pipeline data transfer for neutrals
     do k = 1, this%nneutrals
@@ -341,8 +419,8 @@ subroutine run_simulation( this )
 
     do j = 1, this%nstep2d
 
-      call q_beam%copy_slice( j, p_copy_2to1 )
-      call b_beam%solve( q_beam )
+      call q_beam%copy_slice( j, p_copy_2to1 ) ! copies charge data from f2 to to f1
+      call b_beam%solve( q_beam ) !calculates the beam-contribution to the transverse magnetic field B_r and B_phi
       q_spe = 0.0
       do k = 1, this%nspecies
         call spe(k)%qdp( q_spe )
@@ -415,6 +493,7 @@ subroutine run_simulation( this )
       call e%solve( cu )
       call e%solve( b, psi )
 
+      
       ! for vector potential diagnostics
       if ( this%diag%has_vpotz .or. this%diag%has_vpott ) then
         if ( this%diag%has_vpotz ) call vpot%solve_vpotz( cu )
@@ -470,7 +549,7 @@ subroutine run_simulation( this )
 
     ! pipeline for species
     do k = 1, this%nspecies
-      call spe(k)%psend( this%tag_spe(k), this%id_spe(k) )
+      call spe(k)%psend( this%tag_spe(k), this%id_spe(k) ) !sends x(1),x(2),p(1),p(2),p(3),gamma,psi,q
     enddo
 
     ! pipeline for neutrals
@@ -482,22 +561,37 @@ subroutine run_simulation( this )
     call b%pipe_recv( this%tag_field(2), 'backward', 'guard', 'replace' )
     call e%pipe_recv( this%tag_field(3), 'backward', 'guard', 'replace' )
 
+    if (any(this%beams%adaptive_s_step) .and. id_stage()>0 .and. i_inner==1) then
+      call mpi_recv(time_step_reduction_factor,1,p_dtype_int,(id_stage()-1)*num_procs_loc()+id_proc_loc(),&
+          &2,comm_world_duplicate,istat,ierr)
+      write(*,*) "time step "//num2str(i)//" proc "//num2str(id_proc())//" received from proc"//&
+      &num2str((id_stage()-1)*num_procs_loc()+id_proc_loc())//" trf "&
+      &//num2str(time_step_reduction_factor)
+    endif
+
     ! advance laser fields
     call this%lasers%advance()
 
     ! pipeline for beams
     do k = 1, this%nbeams
       this%tag_beam(k) = ntag()
-      call mpi_wait( this%id_beam(k), istat, ierr )
-      call beam(k)%push( e, b, this%tag_beam(k), this%id_beam(k) )
+      ! if (i_inner==time_step_reduction_factor) then
+      call mpi_wait( this%id_beam(k), istat, ierr)
+      ! endif
+      call beam(k)%push( e, b, this%tag_beam(k), this%id_beam(k),time_step_reduction_factor )
     enddo
 
+    
+
+    if (i_inner==1) then
     call this%diag%run( this%tstep, this%dt )
+    endif
+
 
     ! renew species for next 3D step
     do k = 1, this%nspecies
       call mpi_wait( this%id_spe(k), istat, ierr )
-      call spe(k)%renew( i*this%dt )
+      call spe(k)%renew( i*this%dt ) 
     enddo
 
     ! renew neutrals for next 3D step
@@ -506,8 +600,140 @@ subroutine run_simulation( this )
       call mpi_wait( this%id_neut(2,k), istat, ierr )
       call mpi_wait( this%id_neut(3,k), istat, ierr )
       call mpi_wait( this%id_neut(4,k), istat, ierr )
-      call neut(k)%renew( i*this%dt )
+      call neut(k)%renew( i*this%dt ) 
     enddo
+
+    if (any(this%beams%adaptive_s_step) .and. i_inner==1) then
+      if (id_stage()<num_stages()-1) then 
+        write( *, * ) "time step "//num2str(i)//": from rank: " //  num2str(id_proc())// &
+        &" send time_step_reduction_factor: " // num2str(time_step_reduction_factor)//&
+        &" to "//num2str((id_stage()+1)*num_procs_loc()+id_proc_loc())
+        call mpi_isend(time_step_reduction_factor,1,p_dtype_int,(id_stage()+1)*num_procs_loc()+id_proc_loc(),&
+                &2,comm_world_duplicate,request_send2,ierr)
+      endif
+    endif
+
+    i_inner=i_inner+1
+    enddo inner
+
+    !write( *, * ) "outside test rank: " //  num2str(id_proc())//' i+rank '//num2str(i+id_proc())
+
+    if (any(this%beams%adaptive_s_step)) then
+      ! if (id_stage()<num_stages()-1) then 
+      !   write( *, * ) "time step "//num2str(i)//": from rank: " //  num2str(id_proc())// &
+      !   &" send time_step_reduction_factor: " // num2str(time_step_reduction_factor)//&
+      !   &" to "//num2str((id_stage()+1)*num_procs_loc()+id_proc_loc())
+      !   call mpi_isend(time_step_reduction_factor,1,p_dtype_int,(id_stage()+1)*num_procs_loc()+id_proc_loc(),&
+      !           &2,comm_world_duplicate,request_send2,ierr)
+      ! endif
+      if (mod(i+id_stage(),index_interval_between_checks)==1 &
+        &.and. i+id_stage()>index_interval_between_checks &
+        &.and. i+id_stage()< this%nstep3d) then
+          !write( *, * ) "inside test rank: " //  num2str(id_proc())//' i+rank '//num2str(i+id_proc())
+          nbeam_loop: do k =1, this%nbeams
+
+          if (this%beams%adaptive_s_step(k)) then
+            call this%beams%beam(k)%part%min_beta(lambda_min)
+            !if (k==1) then
+            ! num_s_steps_per_betatron_wavelength(k))=lambda_min/this%dt
+            ! elseif (num_s_steps_per_betatron_wavelength_two(1)>lambda_min/this%dt) then
+            num_s_steps_per_betatron_wavelength(k)=time_step_reduction_factor*lambda_min/(this%dt)
+            !endif
+            ! min_num_s_steps_per_betatron_wavelength(k)=real(this%beams%&
+            ! &min_num_s_steps_per_betatron_wavelength(k))
+
+            if (id_proc()>0) then ! send num_s_steps_per_betatron_wavelength(k) back to proc 0
+              tag=0
+              write( *, * ) "time step "//num2str(i)//"sending on rank: " //  num2str(id_proc())
+              call mpi_isend(num_s_steps_per_betatron_wavelength(k),1,p_dtype_real,0,&
+              &tag,comm_world_duplicate,request_send,ierr)
+            else
+              write(*,*) "receiving"
+              proc_loop: do ranki=1,num_procs()
+                if (ranki==1) then
+                  num_s_steps_per_betatron_wavelength_table(k,ranki)=num_s_steps_per_betatron_wavelength(k)
+                  cycle
+                endif
+                call MPI_RECV(num_s_steps_per_betatron_wavelength_table(k,ranki),1,& !waits until all stages have delivered their min lambda
+                &p_dtype_real,ranki-1,0,comm_world_duplicate,istat,ierr)!requests_recv(k,ranki),ierr)
+                write(*,*) "time step "//num2str(i)//" received rank "//num2str(ranki-1)&
+                &//", value received: "//num2str(num_s_steps_per_betatron_wavelength_table(k,ranki))
+              enddo proc_loop
+            endif
+
+            ! write( *, * ) "rank: " //  num2str(id_proc())// &
+            ! &" min_num_s_steps_per_betatron_wavelength: " // num2str(min_num_s_steps_per_betatron_wavelength)
+            ! write( *, * ) "rank: " //  num2str(id_proc())// &
+            ! &" num_s_steps_per_betatron_wavelength: " // num2str(num_s_steps_per_betatron_wavelength_two(1))
+
+            ! write( *, * ) "before num_s_steps_per_be: " //  num2str(num_s_steps_per_betatron_wavelength_two(1))&
+            ! &//' '//  num2str(num_s_steps_per_betatron_wavelength_two(2))
+            ! write( *, * ) "before global_num_s_steps_p: " //  num2str(global_num_s_steps_per_betatron_wavelength_two(1))&
+            ! &//' '//  num2str(global_num_s_steps_per_betatron_wavelength_two(2))
+            ! ! call mpi_allreduce( num_s_steps_per_betatron_wavelength_two,&
+            ! &global_num_s_steps_per_betatron_wavelength_two,1,mpi_2double_precision,mpi_minloc,comm_world(),ierr)
+            ! write( *, * ) "after test rank: " //  num2str(id_proc())
+            ! if (global_num_s_steps_per_betatron_wavelength_two(1)<=min_num_s_steps_per_betatron_wavelength) then
+            !   if (min_num_s_steps_per_betatron_wavelength/global_num_s_steps_per_betatron_wavelength_two(1)>2) then
+            !     time_step_reduction_factor=int(min_num_s_steps_per_betatron_wavelength/&
+            !     &global_num_s_steps_per_betatron_wavelength_two(1))*time_step_reduction_factor
+            !   else
+            !     time_step_reduction_factor=2*time_step_reduction_factor
+            !   endif
+            !   time_reduction_index=i+id_stage()+1
+            !   write( *, * ) "rank: " //  num2str(id_proc())// &
+            !   &" time_step_reduction_factor: " // num2str(time_step_reduction_factor)//&
+            !   &" time_reduction_index: " // num2str(time_reduction_index)
+            ! end if
+
+          endif
+          if (id_proc()==0) then
+            global_num_s_steps_per_betatron_wavelength_b(k)=minval(num_s_steps_per_betatron_wavelength_table(k,:)) ! compute global minimum
+            ! write(*,*) "global_num_s_steps_per_betatron_wavelength_b: "//num2str(global_num_s_steps_per_betatron_wavelength_b(k))
+            ! write(*,*) "min_num_s_steps_per_betatron_wavelength: "//num2str(min_num_s_steps_per_betatron_wavelength(k))
+          endif
+        enddo nbeam_loop
+
+        if (id_proc()==0) then
+          ratio_of_s_steps=maxval(min_num_s_steps_per_betatron_wavelength/global_num_s_steps_per_betatron_wavelength_b) 
+          ! write( *, * ) "rank: " //  num2str(id_proc())// &
+          ! &" ratio_of_s_steps: " // num2str(ratio_of_s_steps)
+        
+          if (ratio_of_s_steps>1) then
+            !   if (min_num_s_steps_per_betatron_wavelength(k)/global_num_s_steps_per_betatron_wavelength(k)>2) then
+            time_step_reduction_factor=max(ceiling(ratio_of_s_steps)*time_step_reduction_factor,&
+            &this%time_step_reduction_multiplier*time_step_reduction_factor)
+            ! write(*,*) "to rank: "//num2str(id_proc())//" sent time_step_reduction_factor: "//num2str(time_step_reduction_factor)
+            !
+            !   else
+            !     time_step_reduction_factor=2*time_step_reduction_factor
+            !   endif
+            !   time_reduction_index=i+id_stage()+1
+            !   write( *, * ) "rank: " //  num2str(id_proc())// &
+            !   &" time_step_reduction_factor: " // num2str(time_step_reduction_factor)//&
+            !   &" time_reduction_index: " // num2str(time_reduction_index)
+            ! end if
+          endif
+
+        !   do ranki=1,num_procs()
+        !       if (ranki==1) cycle
+        !       write(*,*) "to rank: "//num2str(ranki-1)//"sent time_step_reduction_factor"
+        !       call mpi_send(time_step_reduction_factor,1,p_dtype_int,ranki-1,1,comm_world_duplicate,ierr)
+        !       write(*,*) "rank: "//num2str(ranki-1)//"sent and received time_step_reduction_factor"
+        !   enddo
+        ! else
+        !   write(*,*) "rank: "//num2str(id_proc())//"receiving time_step_reduction_factor"
+        !   call mpi_irecv(time_step_reduction_factor,1,p_dtype_int,0,1,comm_world_duplicate,request_send2,ierr)
+        !   time_reduction_index=i+id_stage()+1
+        endif
+        if (id_stage()==0) then
+          call mpi_bcast(time_step_reduction_factor, 1, p_dtype_int,0,comm_loc_duplicate,ierr)
+        endif
+      endif
+
+      write( *, * ) " at the end of time step "//num2str(i)//", rank: " //  num2str(id_proc())// &
+      &" time_step_reduction_factor: " // num2str(time_step_reduction_factor)
+    endif
 
   enddo ! 3d loop
 

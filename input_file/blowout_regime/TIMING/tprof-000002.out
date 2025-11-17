@@ -1,28 +1,28 @@
  ==================================================
                          EVENT     ELAPSE TIME (s)
  --------------------------------------------------
-                     solve psi          0.1828E-01
-                      solve bz          0.4493E-01
-                 solve beam bt          0.2241E-01
-               solve plasma bt          0.6157E-01
-                      solve ez          0.4567E-01
+                     solve psi          0.2018E+00
+                      solve bz          0.4754E+00
+                 solve beam bt          0.2297E+00
+               solve plasma bt          0.6663E+00
+                      solve ez          0.5044E+00
                  solve beam et          0.0000E+00
-               solve plasma et          0.2283E-02
+               solve plasma et          0.7022E-01
                 solve plasma A          0.0000E+00
                         smooth          0.0000E+00
-              copy guard cells          0.1870E+00
-        copy & add guard cells          0.4724E-02
-                   copy slices          0.7303E-02
-                      pipeline          0.6545E+00
-          deposit 2D particles          0.1543E+01
-             push 2D particles          0.3200E+00
-             move 2D particles          0.5468E-01
+              copy guard cells          0.6578E-01
+        copy & add guard cells          0.4694E-01
+                   copy slices          0.2290E+00
+                      pipeline          0.7428E+01
+          deposit 2D particles          0.5311E+02
+             push 2D particles          0.1261E+02
+             move 2D particles          0.5012E+00
              sort 2D particles          0.0000E+00
-          deposit 3D particles          0.5870E-03
-             push 3D particles          0.0000E+00
-             move 3D particles          0.1281E+01
+          deposit 3D particles          0.1643E+02
+             push 3D particles          0.3221E+02
+             move 3D particles          0.2636E+01
                    extract psi          0.0000E+00
-                   arithmetics          0.1211E-01
-                    write hdf5          0.1431E+00
-         total simulation time          0.4521E+01
+                   arithmetics          0.3557E+00
+                    write hdf5          0.1103E+01
+         total simulation time          0.1444E+03
  ==================================================
