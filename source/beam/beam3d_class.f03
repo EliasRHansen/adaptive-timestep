@@ -221,7 +221,7 @@ subroutine qdeposit_beam3d(this,q,tag,sid)
 
 end subroutine qdeposit_beam3d
 
-subroutine push_beam3d( this, ef, bf, tag, sid,adaptive_s_step_standard_multiplier )
+subroutine push_beam3d( this, ef, bf, tag, sid,time_step_reduction_factor )
 
   implicit none
 
@@ -230,7 +230,7 @@ subroutine push_beam3d( this, ef, bf, tag, sid,adaptive_s_step_standard_multipli
   class(field_b), intent(in) :: bf
   integer, intent(in) :: tag
   integer, intent(inout) :: sid
-  integer, optional, intent(in) :: adaptive_s_step_standard_multiplier
+  integer, optional, intent(in) :: time_step_reduction_factor
   ! local data
   character(len=32), save :: sname = 'push_beam3d'
 
@@ -240,7 +240,7 @@ subroutine push_beam3d( this, ef, bf, tag, sid,adaptive_s_step_standard_multipli
     call write_dbg(cls_name, sname, cls_level, 'ends')
     return
   endif
-  this%part%dt=this%part%dt/real(adaptive_s_step_standard_multiplier)
+  this%part%dt=this%part%dt/real(time_step_reduction_factor)
 
   select case ( this%push_type )
   case ( p_push3_reduced )
@@ -253,7 +253,7 @@ subroutine push_beam3d( this, ef, bf, tag, sid,adaptive_s_step_standard_multipli
   call move_part3d_comm( this%part, tag, sid )
 
   call write_dbg(cls_name, sname, cls_level, 'ends')
-  this%part%dt=this%part%dt*real(adaptive_s_step_standard_multiplier)
+  this%part%dt=this%part%dt*real(time_step_reduction_factor)
 
 end subroutine push_beam3d
 

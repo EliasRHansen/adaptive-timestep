@@ -236,11 +236,9 @@ subroutine init_simulation(this, input, opts)
               this%index_interval_between_checks=this%min_interval_between_checks
             endif
           endif
-        !allocate(num_s_steps_per_betatron_wavelength(this%nbeams))
         allocate(this%num_s_steps_per_betatron_wavelength(this%nbeams))
         allocate(this%min_num_s_steps_per_betatron_wavelength(this%nbeams))
         allocate(this%num_s_steps_per_betatron_wavelength_table(this%nbeams,num_procs()))
-        !allocate(requests_recv(this%nbeams,num_procs()))
         allocate(this%global_num_s_steps_per_betatron_wavelength_b(this%nbeams))
         !reductive time stepping parameters (end)
         allocate(this%adaptive_s_nstep_delay(this%nbeams))
@@ -250,7 +248,6 @@ subroutine init_simulation(this, input, opts)
           else
             this%adaptive_s_nstep_delay(k)=0
           endif
-          call write_stdout("beam("//num2str(k)//").adaptive_s_nstep_delay "//num2str(this%adaptive_s_nstep_delay(k)))
         enddo
   endif
 
@@ -576,8 +573,8 @@ subroutine run_simulation( this )
     call e%pipe_recv( this%tag_field(3), 'backward', 'guard', 'replace' )
 
     if (adaptive_s_stepping .and. id_stage()>0 .and. i_inner==1&
-    &  .and. mod(i-1,this%index_interval_between_checks)==1&
-    & .and. i-1>min_delay) then
+      &  .and. mod(i-1,this%index_interval_between_checks)==1&
+      & .and. i-1>min_delay) then !receive time step reduction factor from earlier stage before push
       call mpi_recv(this%time_step_reduction_factor,1,p_dtype_int,(id_stage()-1)*num_procs_loc()+id_proc_loc(),&
           &2,comm_world_duplicate,istat,ierr)
       ! call write_stdout('step '//num2str(i)//' receiving timestep_reduction_factor, '//&
@@ -607,7 +604,7 @@ subroutine run_simulation( this )
     ! renew species for next 3D step
     do k = 1, this%nspecies
       call mpi_wait( this%id_spe(k), istat, ierr )
-      call spe(k)%renew( i*this%dt ) 
+      call spe(k)%renew( i*this%dt ) !could be refined to spe(k)%renew((i+(i_inner-1)/this%time_step_reduction_factor))*this%dt)
     enddo
 
     ! renew neutrals for next 3D step
@@ -620,8 +617,8 @@ subroutine run_simulation( this )
     enddo
 
     if (adaptive_s_stepping .and. i_inner==1&
-    & .and. mod(i-1,this%index_interval_between_checks)==1 &
-    & .and. i-1>min_delay) then
+      & .and. mod(i-1,this%index_interval_between_checks)==1 &
+      & .and. i-1>min_delay) then !send time step reduction factor to next stage
       if (id_stage()<num_stages()-1) then 
         ! write( *, * ) "time step "//num2str(i)//": from rank: " //  num2str(id_proc())// &
         ! &" send time_step_reduction_factor: " // num2str(this%time_step_reduction_factor)//&
@@ -633,11 +630,11 @@ subroutine run_simulation( this )
       endif
     endif
 
-    i_inner=i_inner+1
+    i_inner=i_inner+1 !advance fractional time-step
     enddo inner
     
     if (adaptive_s_stepping) then
-      call this%rmlacgm(i,&
+      call this%rmlacgm(i,&  !root receives the minimum gamma from all processors (at off-set time steps), computes the global minimum, and shares it across the first stage
             &lambda_min,&
             &comm_world_duplicate,comm_loc_duplicate,&
             &request_send,min_delay)
@@ -748,10 +745,6 @@ subroutine recv_min_lam_and_compute_global_min(this,i,&
     real :: ratio_of_s_steps
     integer, dimension(MPI_STATUS_SIZE) :: istat
     integer :: ierr,k,ranki,tag
-    logical,dimension(2) :: test_mask
-    test_mask=[.true.,.true.]
-
-
       if (mod(i+id_stage(),this%index_interval_between_checks)==1 &
         &.and. i+id_stage()>this%index_interval_between_checks &
         &.and. i+id_stage()< this%nstep3d ) then
