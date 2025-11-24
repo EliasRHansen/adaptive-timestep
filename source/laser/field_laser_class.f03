@@ -155,7 +155,7 @@ subroutine init_field_laser( this, opts, dim, max_mode, gc_num, only_f1, kwargs 
   call this%field_complex%new( opts, dim, max_mode, gc_num, only_f1 )
 
   ! initialize solver
-  call this%init_solver( nr, nrp, noff, this%k0, this%ds, dr, dz )
+  call this%init_solver( nr, nrp, noff, this%k0, this%ds, dr, dz ) ! adjust for adaptive time stepping
 
   ! launch laser  
   call this%profile%launch( this%cfr_re, this%cfr_im, this%cfi_re, this%cfi_im )

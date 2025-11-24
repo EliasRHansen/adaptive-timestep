@@ -199,10 +199,11 @@ subroutine deposit_chi_sim_lasers( this, species, slice_idx )
 
 end subroutine deposit_chi_sim_lasers
 
-subroutine advance_sim_lasers( this )
+subroutine advance_sim_lasers( this,adaptive_time_stepping )
 
   implicit none
   class( sim_lasers ), intent(inout) :: this
+  logical, intent(in),optional :: adaptive_time_stepping
 
   integer :: k, gc
   character(len=32), save :: sname = 'advance_sim_lasers'
@@ -216,6 +217,8 @@ subroutine advance_sim_lasers( this )
     call this%laser(k)%pipe_recv( this%pp_msg(k), 'forward', 'guard', 'replace', gc )
     call this%laser(k)%solve( this%chi )
     call this%laser(k)%pipe_send( this%pp_msg(k), 'forward', 'inner', gc )
+    if (adaptive_time_stepping) call write_stdout("adaptive time stepping not implemented for lasers yet&
+    &do not trust results")
   enddo
 
   call write_dbg( cls_name, sname, cls_level, 'ends' )

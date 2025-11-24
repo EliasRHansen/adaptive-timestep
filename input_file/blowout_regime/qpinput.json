@@ -73,7 +73,7 @@
     ]    
     },
         {
-    "adaptive_s_step" : true,
+    "adaptive_s_step" : false,
     "min_num_s_steps_per_betatron_wavelength": 100,
     "adaptive_s_nstep_delay" : 5,
     "geometry" : "cartesian",

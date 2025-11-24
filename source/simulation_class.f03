@@ -547,6 +547,9 @@ subroutine run_simulation( this )
         call neut(k)%push_x( this%dxi )
         ! call neut(k)%push( e, b, laser_all )
         ! TODO: add sorting
+        if (adaptive_s_stepping) then
+          call write_stdout('adaptive time stepping is not implemented for neutrals. Dont trust results')
+        endif
       enddo
 
       call e%copy_slice( j, p_copy_1to2 )
@@ -584,9 +587,12 @@ subroutine run_simulation( this )
 
     if (adaptive_s_stepping .and. id_stage()>0 .and. i_inner==1&
       &  .and. mod(i-1,this%index_interval_between_checks)==1&
-      & .and. i-1>min_delay) then !receive time step reduction factor from earlier stage before push
+      & .and. i-1>min_delay &
+      & .and. .not. this%stop_adaptive_stepping) then !receive time step reduction factor from earlier stage before push
       call mpi_recv(this%time_step_reduction_factor,1,p_dtype_int,(id_stage()-1)*num_procs_loc()+id_proc_loc(),&
           &2,comm_world_duplicate,istat,ierr)
+      call mpi_recv(this%stop_adaptive_stepping,1,MPI_LOGICAL,(id_stage()-1)*num_procs_loc()+id_proc_loc(),&
+          &3,comm_world_duplicate,istat,ierr)
       ! call write_stdout('step '//num2str(i)//' receiving timestep_reduction_factor, '//&
       ! &num2str(this%time_step_reduction_factor),only_root=.false.)
       ! write(*,*) "time step "//num2str(i)//" proc "//num2str(id_proc())//" received from proc"//&
@@ -595,7 +601,7 @@ subroutine run_simulation( this )
     endif
 
     ! advance laser fields
-    call this%lasers%advance()
+    call this%lasers%advance(adaptive_s_stepping) ! adaptive time stepping not implemented
 
     ! pipeline for beams
     do k = 1, this%nbeams
@@ -635,6 +641,8 @@ subroutine run_simulation( this )
         ! &" to "//num2str((id_stage()+1)*num_procs_loc()+id_proc_loc())
         call mpi_isend(this%time_step_reduction_factor,1,p_dtype_int,(id_stage()+1)*num_procs_loc()+id_proc_loc(),&
                 &2,comm_world_duplicate,request_send2,ierr)
+        call mpi_isend(this%stop_adaptive_stepping,1,MPI_LOGICAL,(id_stage()+1)*num_procs_loc()+id_proc_loc(),&
+                &3,comm_world_duplicate,request_send2,ierr)
         ! call write_stdout('At step '//num2str(i)//' sending timestep_reduction_factor, '//&
         ! &num2str(this%time_step_reduction_factor),only_root=.false.)
       endif
@@ -649,6 +657,8 @@ subroutine run_simulation( this )
             &comm_world_duplicate,comm_loc_duplicate,&
             &request_send,min_delay)
     endif
+    ! if (this%stop_adaptive_stepping) call write_stdout('stop true',only_root=.false.)
+    ! if (.not. this%stop_adaptive_stepping) call write_stdout('stop not true',only_root=.false.)
 
   enddo ! 3d loop
 
@@ -817,6 +827,7 @@ subroutine recv_min_lam_and_compute_global_min(this,i,&
         endif
         if (id_stage()==0 .and. i>min_delay) then
           call mpi_bcast(this%time_step_reduction_factor, 1, p_dtype_int,0,comm_slice,ierr)
+          call mpi_bcast(this%stop_adaptive_stepping, 1, MPI_LOGICAL,0,comm_slice,ierr)
         endif
       endif
 
