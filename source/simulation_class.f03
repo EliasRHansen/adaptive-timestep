@@ -587,8 +587,7 @@ subroutine run_simulation( this )
 
     if (adaptive_s_stepping .and. id_stage()>0 .and. i_inner==1&
       &  .and. mod(i-1,this%index_interval_between_checks)==1&
-      & .and. i-1>min_delay &
-      & .and. .not. this%stop_adaptive_stepping) then !receive time step reduction factor from earlier stage before push
+      & .and. i-1>min_delay) then !receive time step reduction factor from earlier stage before push
       call mpi_recv(this%time_step_reduction_factor,1,p_dtype_int,(id_stage()-1)*num_procs_loc()+id_proc_loc(),&
           &2,comm_world_duplicate,istat,ierr)
       call mpi_recv(this%stop_adaptive_stepping,1,MPI_LOGICAL,(id_stage()-1)*num_procs_loc()+id_proc_loc(),&
@@ -601,7 +600,7 @@ subroutine run_simulation( this )
     endif
 
     ! advance laser fields
-    call this%lasers%advance(adaptive_s_stepping) ! adaptive time stepping not implemented
+    call this%lasers%advance(adaptive_s_stepping) ! adaptive time stepping not implemented for laser advancement
 
     ! pipeline for beams
     do k = 1, this%nbeams

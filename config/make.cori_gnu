@@ -34,11 +34,18 @@ DISABLE_POPAS = TRUE
 DISABLE_TEMPLATE = TRUE
 
 # Library dependencies
-HYPRE_LIB = $(HOME)/local/hypre/2.15.1_gnu-11.2/lib
-HYPRE_INC = $(HOME)/local/hypre/2.15.1_gnu-11.2/include
-JSON_LIB = $(HOME)/local/json-fortran/8.2.0_gnu-11.2/lib
-JSON_INC = $(HOME)/local/json-fortran/8.2.0_gnu-11.2/lib
-HDF5_INC =
-HDF5_LIB = 
+#HYPRE_LIB = $(HOME)/local/hypre/2.15.1_gnu-11.2/lib
+HYPRE_LIB=/global/homes/e/erh/hypre/install/lib
+
+#HYPRE_INC = $(HOME)/local/hypre/2.15.1_gnu-11.2/include
+HYPRE_INC=/global/homes/e/erh/hypre/install/include
+
+#JSON_LIB = $(HOME)/local/json-fortran/8.2.0_gnu-11.2/lib
+JSON_LIB = /global/homes/e/erh/json-fortran/build/lib
+#JSON_INC = $(HOME)/local/json-fortran/8.2.0_gnu-11.2/lib
+JSON_INC=/global/homes/e/erh/json-fortran/build/include
+
+#HDF5_INC =/global/homes/e/erh/hdf5-1.14.5/include
+#HDF5_LIB =/global/homes/e/erh/hdf5-1.14.5/lib
 
 INCF = -I$(JSON_INC)
