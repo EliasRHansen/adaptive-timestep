@@ -53,7 +53,7 @@ type simulation
 
   !reductive time step parameters
   integer :: adaptive_s_step_standard_multiplier,index_interval_between_checks
-  integer :: min_interval_between_checks
+  integer :: min_interval_between_checks, max_dt_fraction_denominator
   real, dimension(:),allocatable :: num_s_steps_per_betatron_wavelength
   real, dimension(:), allocatable :: min_num_s_steps_per_betatron_wavelength
   integer :: time_step_reduction_factor
@@ -61,6 +61,7 @@ type simulation
   real, dimension(:,:), allocatable :: num_s_steps_per_betatron_wavelength_table
   real,dimension(:),allocatable :: global_num_s_steps_per_betatron_wavelength_b
   real :: adaptive_s_step_safety_multiplier
+  logical :: stop_adaptive_stepping
 
   ! pipeline parameters
   integer, dimension(:), allocatable :: tag_field, id_field
@@ -214,7 +215,7 @@ subroutine init_simulation(this, input, opts)
             call input%get( 'simulation.adaptive_s_step_standard_multiplier', &
             &this%adaptive_s_step_standard_multiplier )
           else
-            call write_stdout('adaptive_s_step_standard_multiplier not provided in input. setting it to 2.')
+            call write_stdout('adaptive_s_step_standard_multiplier not provided in input. Setting it to 2.')
             this%adaptive_s_step_standard_multiplier=2
           endif
 
@@ -222,8 +223,16 @@ subroutine init_simulation(this, input, opts)
             call input%get( 'simulation.adaptive_s_step_safety_multiplier', &
             &this%adaptive_s_step_safety_multiplier )
           else
-            call write_stdout('adaptive_s_step_safety_multiplier not provided in input. setting it to 1.2.')
+            call write_stdout('adaptive_s_step_safety_multiplier not provided in input. Setting it to 1.2.')
             this%adaptive_s_step_safety_multiplier=1.2
+          endif
+
+          if(input%found('simulation.max_dt_fraction_denominator')) then
+            call input%get( 'simulation.max_dt_fraction_denominator', &
+            &this%max_dt_fraction_denominator )
+          else
+            call write_stdout('max_dt_fraction_denominator not provided in input. Setting it to HUGE.')
+            this%max_dt_fraction_denominator=HUGE(this%max_dt_fraction_denominator)
           endif
 
           if (input%found('simulation.index_interval_between_checks')) then
@@ -339,6 +348,7 @@ subroutine run_simulation( this )
   adaptive_s_stepping=any(this%beams%adaptive_s_step)
 
   if (adaptive_s_stepping) then
+        this%stop_adaptive_stepping=.false.
         call mpi_comm_dup(comm_world(),comm_world_duplicate,ierr)
         call mpi_comm_dup(comm_loc(),comm_loc_duplicate,ierr)
         min_delay=minval(this%adaptive_s_nstep_delay)
@@ -633,7 +643,7 @@ subroutine run_simulation( this )
     i_inner=i_inner+1 !advance fractional time-step
     enddo inner
     
-    if (adaptive_s_stepping) then
+    if (adaptive_s_stepping .and. .not. this%stop_adaptive_stepping) then
       call this%rmlacgm(i,&  !root receives the minimum gamma from all processors (at off-set time steps), computes the global minimum, and shares it across the first stage
             &lambda_min,&
             &comm_world_duplicate,comm_loc_duplicate,&
@@ -798,6 +808,11 @@ subroutine recv_min_lam_and_compute_global_min(this,i,&
             this%time_step_reduction_factor=max(ceiling(this%adaptive_s_step_safety_multiplier*ratio_of_s_steps)&
             &*this%time_step_reduction_factor,&
             &this%adaptive_s_step_standard_multiplier*this%time_step_reduction_factor)
+            if (this%time_step_reduction_factor>=this%max_dt_fraction_denominator) then
+              call write_stdout("minimum dt reached; timestep will not be reduced further")
+              this%stop_adaptive_stepping=.true.
+              this%time_step_reduction_factor=this%max_dt_fraction_denominator
+            endif
           endif
         endif
         if (id_stage()==0 .and. i>min_delay) then
