@@ -317,6 +317,7 @@ subroutine run_simulation( this )
   class(field_laser), dimension(:), pointer :: laser
   class(species2d), dimension(:), pointer :: spe
   class(neutral), dimension(:), pointer :: neut
+  real :: ratio_of_s_steps
 
   call write_dbg( cls_name, sname, cls_level, 'starts' )
 
@@ -352,7 +353,9 @@ subroutine run_simulation( this )
         call mpi_comm_dup(comm_world(),comm_world_duplicate,ierr)
         call mpi_comm_dup(comm_loc(),comm_loc_duplicate,ierr)
         min_delay=minval(this%adaptive_s_nstep_delay)
-        do k=1,this%nbeams
+        call write_stdout("checking if the initial time-step needs to be reduced")
+
+        nbeam_loop: do k=1,this%nbeams
           call this%beams%beam(k)%part%min_beta(lambda_min)
           this%min_num_s_steps_per_betatron_wavelength(k)=real(this%beams%&
           &min_num_s_steps_per_betatron_wavelength(k))
@@ -361,7 +364,56 @@ subroutine run_simulation( this )
               this%num_s_steps_per_betatron_wavelength_table(k,ranki)=this%num_s_steps_per_betatron_wavelength(k)
           enddo
           this%global_num_s_steps_per_betatron_wavelength_b(k)=minval(this%num_s_steps_per_betatron_wavelength_table(k,:))
-        enddo
+          if (this%beams%adaptive_s_step(k) .and. this%adaptive_s_nstep_delay(k)==0) then
+            call this%beams%beam(k)%part%min_beta(lambda_min)
+            this%num_s_steps_per_betatron_wavelength(k)=this%time_step_reduction_factor*lambda_min/(this%dt)
+            if (id_proc()>0) then ! send num_s_steps_per_betatron_wavelength(k) back to proc 0
+              tag=0
+              call mpi_isend(this%num_s_steps_per_betatron_wavelength(k),1,p_dtype_real,0,&
+              &tag,comm_world_duplicate,request_send,ierr)
+            else
+              proc_loop: do ranki=1,num_procs()
+                if (ranki==1) then !rank 0, doesn't receive anything
+                  this%num_s_steps_per_betatron_wavelength_table(k,ranki)=this%num_s_steps_per_betatron_wavelength(k)
+                  cycle
+                endif
+                call mpi_recv(this%num_s_steps_per_betatron_wavelength_table(k,ranki),1,& !waits until all processors have delivered their min lambda
+                &p_dtype_real,ranki-1,0,comm_world_duplicate,istat,ierr)
+              enddo proc_loop
+            endif
+          endif
+          if (id_proc()==0 .and. this%adaptive_s_nstep_delay(k)==0) then
+            this%global_num_s_steps_per_betatron_wavelength_b(k)=minval(this%num_s_steps_per_betatron_wavelength_table(k,:)) ! compute global minimum
+            call write_stdout("initial global minimum p3 for beam "//num2str(k)//" &
+            &is "//num2str((this%dt*this%global_num_s_steps_per_betatron_wavelength_b(k)/&
+            &(2*pi*this%time_step_reduction_factor))**2/2))
+
+          endif
+        enddo nbeam_loop
+
+        if (id_proc()==0 .and. min_delay==0) then ! on proc 0, determine the new time step
+          ratio_of_s_steps=maxval(this%min_num_s_steps_per_betatron_wavelength/&
+          &this%global_num_s_steps_per_betatron_wavelength_b,&
+          &mask=0==this%adaptive_s_nstep_delay) 
+          do k=1,this%nbeams
+            if (this%adaptive_s_nstep_delay(k)==0) call write_stdout("Initial minimum number of 3d-steps (s-steps) per &
+            &betatron-wavelength for beam "//num2str(k)//&
+            &':' //num2str(this%global_num_s_steps_per_betatron_wavelength_b(k))//'; provided critical value is '&
+            &//num2str(this%min_num_s_steps_per_betatron_wavelength(k)))
+          enddo
+          if (ratio_of_s_steps>1) then
+            this%time_step_reduction_factor=max(ceiling(this%adaptive_s_step_safety_multiplier*ratio_of_s_steps)&
+            &*this%time_step_reduction_factor,&
+            &this%adaptive_s_step_standard_multiplier*this%time_step_reduction_factor)
+            if (this%time_step_reduction_factor>=this%max_dt_fraction_denominator) then
+              call write_stdout("minimum dt bigger than initial dt; timestep will not be reduced further.")
+              this%stop_adaptive_stepping=.true.
+              this%time_step_reduction_factor=this%max_dt_fraction_denominator
+            endif
+          endif
+        endif
+        call mpi_bcast(this%time_step_reduction_factor, 1, p_dtype_int,0,comm_world_duplicate,ierr)
+        call mpi_bcast(this%stop_adaptive_stepping, 1, MPI_LOGICAL,0,comm_world_duplicate,ierr)
   endif
 
   ! deposit beams and do diagnostics to see the initial distribution if it is
@@ -807,7 +859,12 @@ subroutine recv_min_lam_and_compute_global_min(this,i,&
           ratio_of_s_steps=maxval(this%min_num_s_steps_per_betatron_wavelength/&
           &this%global_num_s_steps_per_betatron_wavelength_b,&
           &mask=i>this%adaptive_s_nstep_delay) 
-          call write_stdout("ratio_of_s_steps: "//num2str(ratio_of_s_steps))
+          do k=1,this%nbeams
+            if (i>=this%adaptive_s_nstep_delay(k)) call write_stdout("Minimum number of 3d-steps (s-steps) per&
+            & betatron-wavelength for beam "//num2str(k)//&
+            &':'//num2str(this%global_num_s_steps_per_betatron_wavelength_b(k))//'; provided critical value is '&
+            &//num2str(this%min_num_s_steps_per_betatron_wavelength(k)))
+          enddo
           ! call write_stdout("this%min_num_s_steps_per_betatron_wavelength(1): "//&
           ! &num2str(this%min_num_s_steps_per_betatron_wavelength(1)))
           ! call write_stdout("this%min_num_s_steps_per_betatron_wavelength(2): "//&
