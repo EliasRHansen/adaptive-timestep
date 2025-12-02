@@ -241,7 +241,7 @@ subroutine push_beam3d( this, ef, bf, tag, sid,time_step_reduction_factor )
     return
   endif
   this%part%dt=this%part%dt/real(time_step_reduction_factor)
-
+  
   select case ( this%push_type )
   case ( p_push3_reduced )
     call this%part%push_reduced( ef, bf )

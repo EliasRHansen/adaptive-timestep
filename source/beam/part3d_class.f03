@@ -376,7 +376,7 @@ subroutine push_boris_part3d( this, ef, bf )
 
    call write_dbg(cls_name, sname, cls_level, 'starts')
    call start_tprof( 'push 3D particles' )
-
+   !call write_stdout('Pushing particles with dt='//num2str(this%dt))
    qtmh = 0.5 * this%qbm * this%dt
    max_mode = ef%get_max_mode()
 

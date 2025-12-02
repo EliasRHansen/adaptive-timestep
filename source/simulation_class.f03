@@ -35,6 +35,7 @@ public :: convergence_tester
 
 integer, parameter :: p_max_tag_num = 32
 
+
 type simulation
 
   ! private
@@ -663,7 +664,7 @@ subroutine run_simulation( this )
 
     
 
-    if (i_inner==1) then
+    if (i_inner==this%time_step_reduction_factor) then
     call this%diag%run( this%tstep, this%dt )
     endif
 
